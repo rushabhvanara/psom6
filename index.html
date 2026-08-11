@@ -1,1 +1,668 @@
-xx
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reactive Power Compensation Web Simulator</title>
+  <style>
+    :root {
+      --bg-color: #0f172a;
+      --card-bg: #1e293b;
+      --border-color: #334155;
+      --accent-color: #38bdf8;
+      --accent-series: #f43f5e;
+      --accent-shunt: #10b981;
+      --accent-combo: #a855f7;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: var(--bg-color); color: var(--text-main); padding: 20px; line-height: 1.5; }
+
+    header { text-align: center; margin-bottom: 25px; }
+    header h1 { color: var(--accent-color); font-size: 2rem; margin-bottom: 5px; }
+    header p { color: var(--text-muted); font-size: 1rem; }
+
+    .grid-container {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      max-width: 1400px;
+      margin: 0 auto;
+    }
+
+    @media (max-width: 900px) {
+      .grid-container { grid-template-columns: 1fr; }
+    }
+
+    .card {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 15px;
+      border-bottom: 2px solid var(--border-color);
+      padding-bottom: 8px;
+      color: var(--accent-color);
+    }
+
+    /* Controls Styling */
+    .control-group { margin-bottom: 15px; }
+    .control-group label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-bottom: 5px;
+    }
+    .control-group label span.val { color: var(--text-main); font-weight: bold; }
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent-color);
+      cursor: pointer;
+    }
+
+    .mode-buttons {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      margin-bottom: 20px;
+    }
+    .btn-mode {
+      background-color: #0f172a;
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 10px;
+      border-radius: 8px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    .btn-mode:hover { border-color: var(--accent-color); }
+    .btn-mode.active[data-mode="none"] { background: #334155; border-color: var(--text-muted); }
+    .btn-mode.active[data-mode="shunt"] { background: var(--accent-shunt); color: #000; }
+    .btn-mode.active[data-mode="series"] { background: var(--accent-series); color: #fff; }
+    .btn-mode.active[data-mode="combo"] { background: var(--accent-combo); color: #fff; }
+
+    /* Right Panel Dashboard */
+    .dashboard { display: grid; grid-template-rows: auto auto 1fr; gap: 20px; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+      gap: 12px;
+    }
+    .metric-card {
+      background-color: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 12px;
+      text-align: center;
+    }
+    .metric-card .title { font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; }
+    .metric-card .value { font-size: 1.3rem; font-weight: bold; margin-top: 4px; color: var(--accent-color); }
+
+    .status-banner {
+      padding: 10px 15px;
+      border-radius: 8px;
+      font-weight: bold;
+      text-align: center;
+      display: none;
+    }
+    .status-banner.collapse {
+      display: block;
+      background-color: rgba(244, 63, 94, 0.2);
+      border: 1px solid var(--accent-series);
+      color: var(--accent-series);
+    }
+
+    /* Visualization Canvas */
+    .visualizations {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+    @media (max-width: 1100px) { .visualizations { grid-template-columns: 1fr; } }
+
+    .canvas-container {
+      background-color: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 10px;
+      position: relative;
+    }
+    .canvas-container h3 { font-size: 0.9rem; margin-bottom: 8px; color: var(--text-muted); text-align: center;}
+    canvas { display: block; width: 100%; height: 220px; }
+    .schematic-canvas { height: 180px; grid-column: 1 / -1; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Transmission Line Reactive Power Compensation Simulator</h1>
+    <p>Interactive Web Simulation of Series, Shunt, and Series-Shunt (UPFC) Compensation</p>
+  </header>
+
+  <div class="grid-container">
+    
+    <!-- LEFT PANEL: CONTROLS -->
+    <div class="card">
+      <h2>Compensation Mode</h2>
+      <div class="mode-buttons">
+        <button class="btn-mode active" data-mode="none">Uncompensated</button>
+        <button class="btn-mode" data-mode="shunt">Shunt Comp.</button>
+        <button class="btn-mode" data-mode="series">Series Comp.</button>
+        <button class="btn-mode" data-mode="combo">Series-Shunt</button>
+      </div>
+
+      <h2>Line Parameters</h2>
+      <div class="control-group">
+        <label>Sending Voltage (Vs): <span class="val" id="lbl-vs">1.00 pu</span></label>
+        <input type="range" id="input-vs" min="0.8" max="1.2" step="0.01" value="1.00">
+      </div>
+      <div class="control-group">
+        <label>Line Reactance (X<sub>L</sub>): <span class="val" id="lbl-xl">0.40 pu</span></label>
+        <input type="range" id="input-xl" min="0.1" max="0.8" step="0.01" value="0.40">
+      </div>
+      <div class="control-group">
+        <label>Line Resistance (R): <span class="val" id="lbl-r">0.04 pu</span></label>
+        <input type="range" id="input-r" min="0.00" max="0.15" step="0.01" value="0.04">
+      </div>
+
+      <h2>Load Demand</h2>
+      <div class="control-group">
+        <label>Active Load (P<sub>L</sub>): <span class="val" id="lbl-pl">0.80 pu</span></label>
+        <input type="range" id="input-pl" min="0.0" max="1.8" step="0.05" value="0.80">
+      </div>
+      <div class="control-group">
+        <label>Reactive Load (Q<sub>L</sub>): <span class="val" id="lbl-ql">0.50 pu</span></label>
+        <input type="range" id="input-ql" min="-0.5" max="1.2" step="0.05" value="0.50">
+      </div>
+
+      <h2>Compensation Controls</h2>
+      <div class="control-group" id="ctrl-shunt">
+        <label>Shunt Injection (Q<sub>sh</sub>): <span class="val" id="lbl-qsh">0.00 pu</span></label>
+        <input type="range" id="input-qsh" min="-0.5" max="1.0" step="0.02" value="0.00">
+      </div>
+      <div class="control-group" id="ctrl-series">
+        <label>Series Factor (k<sub>s</sub> = %X<sub>C</sub>/X<sub>L</sub>): <span class="val" id="lbl-ks">0 %</span></label>
+        <input type="range" id="input-ks" min="0" max="75" step="1" value="0">
+      </div>
+    </div>
+
+    <!-- RIGHT PANEL: DASHBOARD & CHARTS -->
+    <div class="dashboard">
+      
+      <!-- Metrics Summary -->
+      <div class="card">
+        <div id="collapse-banner" class="status-banner collapse">
+          ⚠️ VOLTAGE COLLAPSE DETECTED! Load exceeds system transfer limit.
+        </div>
+        <div class="metrics-grid">
+          <div class="metric-card">
+            <div class="title">Receiving Volt (Vr)</div>
+            <div class="value" id="out-vr">1.000 pu</div>
+          </div>
+          <div class="metric-card">
+            <div class="title">Power Angle (&delta;)</div>
+            <div class="value" id="out-delta">0.0°</div>
+          </div>
+          <div class="metric-card">
+            <div class="title">Max Power (P<sub>max</sub>)</div>
+            <div class="value" id="out-pmax">2.500 pu</div>
+          </div>
+          <div class="metric-card">
+            <div class="title">Line Current (I<sub>L</sub>)</div>
+            <div class="value" id="out-il">0.000 pu</div>
+          </div>
+          <div class="metric-card">
+            <div class="title">P-Loss (I²R)</div>
+            <div class="value" id="out-ploss">0.000 pu</div>
+          </div>
+          <div class="metric-card">
+            <div class="title">Efficiency (&eta;)</div>
+            <div class="value" id="out-eff">100.0%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Single Line Diagram Canvas -->
+      <div class="card">
+        <div class="canvas-container">
+          <h3>Single Line Diagram (Dynamic Compensation View)</h3>
+          <canvas id="canvas-schematic" class="schematic-canvas"></canvas>
+        </div>
+      </div>
+
+      <!-- Plots Canvas -->
+      <div class="card visualizations">
+        <div class="canvas-container">
+          <h3>Power-Angle Curve (P - &delta;)</h3>
+          <canvas id="canvas-pdelta"></canvas>
+        </div>
+        <div class="canvas-container">
+          <h3>Voltage Profile Along Line</h3>
+          <canvas id="canvas-vprofile"></canvas>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+  <script>
+    // System State
+    let mode = 'none'; // 'none', 'shunt', 'series', 'combo'
+    let state = {
+      Vs: 1.0, XL: 0.40, R: 0.04,
+      PL: 0.80, QL: 0.50,
+      Qsh: 0.0, ks: 0.0,
+      // Calculated
+      Xeff: 0.40, Qnet: 0.50, Vr: 1.0, delta: 0,
+      Pmax: 2.5, IL: 0, Ploss: 0, eff: 100,
+      collapsed: false
+    };
+
+    // DOM Elements
+    const btnModes = document.querySelectorAll('.btn-mode');
+    const inputs = {
+      Vs: document.getElementById('input-vs'),
+      XL: document.getElementById('input-xl'),
+      R: document.getElementById('input-r'),
+      PL: document.getElementById('input-pl'),
+      QL: document.getElementById('input-ql'),
+      Qsh: document.getElementById('input-qsh'),
+      ks: document.getElementById('input-ks')
+    };
+
+    const labels = {
+      Vs: document.getElementById('lbl-vs'),
+      XL: document.getElementById('lbl-xl'),
+      R: document.getElementById('lbl-r'),
+      PL: document.getElementById('lbl-pl'),
+      QL: document.getElementById('lbl-ql'),
+      Qsh: document.getElementById('lbl-qsh'),
+      ks: document.getElementById('lbl-ks')
+    };
+
+    const outputs = {
+      Vr: document.getElementById('out-vr'),
+      delta: document.getElementById('out-delta'),
+      Pmax: document.getElementById('out-pmax'),
+      IL: document.getElementById('out-il'),
+      Ploss: document.getElementById('out-ploss'),
+      eff: document.getElementById('out-eff'),
+      banner: document.getElementById('collapse-banner')
+    };
+
+    const cvsSchematic = document.getElementById('canvas-schematic');
+    const cvsPDelta = document.getElementById('canvas-pdelta');
+    const cvsVProfile = document.getElementById('canvas-vprofile');
+
+    // Event Listeners
+    btnModes.forEach(btn => {
+      btn.addEventListener('click', () => {
+        btnModes.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        mode = btn.dataset.mode;
+        updateUIControls();
+        calculateSystem();
+      });
+    });
+
+    Object.keys(inputs).forEach(key => {
+      inputs[key].addEventListener('input', () => {
+        readInputs();
+        calculateSystem();
+      });
+    });
+
+    function updateUIControls() {
+      const ctrlShunt = document.getElementById('ctrl-shunt');
+      const ctrlSeries = document.getElementById('ctrl-series');
+
+      if (mode === 'none') {
+        ctrlShunt.style.opacity = '0.3';
+        ctrlSeries.style.opacity = '0.3';
+        inputs.Qsh.disabled = true; inputs.ks.disabled = true;
+      } else if (mode === 'shunt') {
+        ctrlShunt.style.opacity = '1.0';
+        ctrlSeries.style.opacity = '0.3';
+        inputs.Qsh.disabled = false; inputs.ks.disabled = true;
+      } else if (mode === 'series') {
+        ctrlShunt.style.opacity = '0.3';
+        ctrlSeries.style.opacity = '1.0';
+        inputs.Qsh.disabled = true; inputs.ks.disabled = false;
+      } else if (mode === 'combo') {
+        ctrlShunt.style.opacity = '1.0';
+        ctrlSeries.style.opacity = '1.0';
+        inputs.Qsh.disabled = false; inputs.ks.disabled = false;
+      }
+    }
+
+    function readInputs() {
+      state.Vs = parseFloat(inputs.Vs.value);
+      state.XL = parseFloat(inputs.XL.value);
+      state.R = parseFloat(inputs.R.value);
+      state.PL = parseFloat(inputs.PL.value);
+      state.QL = parseFloat(inputs.QL.value);
+
+      labels.Vs.innerText = state.Vs.toFixed(2) + ' pu';
+      labels.XL.innerText = state.XL.toFixed(2) + ' pu';
+      labels.R.innerText = state.R.toFixed(2) + ' pu';
+      labels.PL.innerText = state.PL.toFixed(2) + ' pu';
+      labels.QL.innerText = state.QL.toFixed(2) + ' pu';
+
+      if (mode === 'none') {
+        state.Qsh = 0;
+        state.ks = 0;
+      } else if (mode === 'shunt') {
+        state.Qsh = parseFloat(inputs.Qsh.value);
+        state.ks = 0;
+      } else if (mode === 'series') {
+        state.Qsh = 0;
+        state.ks = parseFloat(inputs.ks.value) / 100.0;
+      } else if (mode === 'combo') {
+        state.Qsh = parseFloat(inputs.Qsh.value);
+        state.ks = parseFloat(inputs.ks.value) / 100.0;
+      }
+
+      labels.Qsh.innerText = state.Qsh.toFixed(2) + ' pu';
+      labels.ks.innerText = Math.round(state.ks * 100) + ' %';
+    }
+
+    function calculateSystem() {
+      // Effective reactance
+      state.Xeff = state.XL * (1 - state.ks);
+      if (state.Xeff <= 0.001) state.Xeff = 0.001; // prevent div by 0
+
+      // Net reactive power demand at receiving bus
+      state.Qnet = state.QL - state.Qsh;
+
+      // Solving exact receiving end voltage Vr:
+      // (Vr^2)^2 + [2*(P*R + Qnet*Xeff) - Vs^2] * (Vr^2) + (P^2 + Qnet^2)*(R^2 + Xeff^2) = 0
+      const B = 2 * (state.PL * state.R + state.Qnet * state.Xeff) - Math.pow(state.Vs, 2);
+      const C = (Math.pow(state.PL, 2) + Math.pow(state.Qnet, 2)) * (Math.pow(state.R, 2) + Math.pow(state.Xeff, 2));
+      const disc = Math.pow(B, 2) - 4 * C;
+
+      if (disc < 0) {
+        state.collapsed = true;
+        state.Vr = 0;
+        state.delta = 0;
+        state.IL = 0;
+        state.Ploss = 0;
+        state.eff = 0;
+      } else {
+        state.collapsed = false;
+        const Vr2 = (-B + Math.sqrt(disc)) / 2;
+        if (Vr2 <= 0) {
+          state.collapsed = true;
+          state.Vr = 0;
+        } else {
+          state.Vr = Math.sqrt(Vr2);
+          
+          // Power angle delta calculation
+          const sinDelta = (state.PL * state.Xeff - state.Qnet * state.R) / (state.Vs * state.Vr);
+          const cosDelta = (state.Vr * state.Vr + state.PL * state.R + state.Qnet * state.Xeff) / (state.Vs * state.Vr);
+          state.delta = Math.atan2(sinDelta, cosDelta) * (180 / Math.PI);
+
+          // Line current and losses
+          state.IL = Math.sqrt(Math.pow(state.PL, 2) + Math.pow(state.Qnet, 2)) / state.Vr;
+          state.Ploss = Math.pow(state.IL, 2) * state.R;
+          
+          const P_in = state.PL + state.Ploss;
+          state.eff = P_in > 0 ? (state.PL / P_in) * 100 : 100;
+        }
+      }
+
+      // Maximum power transfer limit (approx for line)
+      state.Pmax = (state.Vs * (state.Vr > 0 ? state.Vr : 1.0)) / state.Xeff;
+
+      renderDashboard();
+      renderSchematic();
+      renderPDeltaChart();
+      renderVProfileChart();
+    }
+
+    function renderDashboard() {
+      if (state.collapsed) {
+        outputs.banner.style.display = 'block';
+        outputs.Vr.innerText = 'COLLAPSE';
+        outputs.delta.innerText = 'N/A';
+        outputs.IL.innerText = 'N/A';
+        outputs.Ploss.innerText = 'N/A';
+        outputs.eff.innerText = '0.0%';
+      } else {
+        outputs.banner.style.display = 'none';
+        outputs.Vr.innerText = state.Vr.toFixed(3) + ' pu';
+        outputs.delta.innerText = state.delta.toFixed(1) + '°';
+        outputs.IL.innerText = state.IL.toFixed(3) + ' pu';
+        outputs.Ploss.innerText = state.Ploss.toFixed(4) + ' pu';
+        outputs.eff.innerText = state.eff.toFixed(1) + '%';
+      }
+      outputs.Pmax.innerText = state.Pmax.toFixed(3) + ' pu';
+    }
+
+    // Canvas Rendering Helpers
+    function setupCanvas(canvas) {
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * dpr;
+      canvas.height = rect.height * dpr;
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      return { ctx, width: rect.width, height: rect.height };
+    }
+
+    // Draw Schematic
+    function renderSchematic() {
+      const { ctx, width, height } = setupCanvas(cvsSchematic);
+      ctx.clearRect(0, 0, width, height);
+
+      const y = height / 2 - 10;
+      const bus1X = 70;
+      const bus2X = width - 70;
+      const midX = (bus1X + bus2X) / 2;
+
+      // Bus 1 (Sending)
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 6;
+      ctx.beginPath(); ctx.moveTo(bus1X, y - 40); ctx.lineTo(bus1X, y + 40); ctx.stroke();
+      ctx.fillStyle = '#38bdf8'; ctx.font = '12px sans-serif';
+      ctx.fillText(`Vs = ${state.Vs.toFixed(2)} pu`, bus1X - 30, y - 50);
+
+      // Bus 2 (Receiving)
+      ctx.strokeStyle = state.collapsed ? '#f43f5e' : '#10b981';
+      ctx.beginPath(); ctx.moveTo(bus2X, y - 40); ctx.lineTo(bus2X, y + 40); ctx.stroke();
+      ctx.fillStyle = ctx.strokeStyle;
+      ctx.fillText(`Vr = ${state.Vr.toFixed(2)} pu`, bus2X - 20, y - 50);
+
+      // Main Transmission Line
+      ctx.strokeStyle = '#94a3b8'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(bus1X, y); ctx.lineTo(bus2X, y); ctx.stroke();
+
+      // Series Compensator Icon
+      if (mode === 'series' || mode === 'combo') {
+        const cx = bus1X + (midX - bus1X) * 0.6;
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(cx - 20, y - 15, 40, 30);
+        ctx.strokeStyle = '#f43f5e'; ctx.lineWidth = 2;
+        ctx.strokeRect(cx - 20, y - 15, 40, 30);
+        // Capacitor plates symbol
+        ctx.beginPath();
+        ctx.moveTo(cx - 6, y - 10); ctx.lineTo(cx - 6, y + 10);
+        ctx.moveTo(cx + 6, y - 10); ctx.lineTo(cx + 6, y + 10);
+        ctx.stroke();
+        ctx.fillStyle = '#f43f5e'; ctx.font = '10px sans-serif';
+        ctx.fillText(`Xc (${Math.round(state.ks*100)}%)`, cx - 20, y + 28);
+      }
+
+      // Shunt Compensator Icon
+      if (mode === 'shunt' || mode === 'combo') {
+        ctx.strokeStyle = '#a855f7'; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(midX, y); ctx.lineTo(midX, y + 35); ctx.stroke();
+        
+        // Dynamic STATCOM/Capacitor circle symbol
+        ctx.beginPath(); ctx.arc(midX, y + 45, 12, 0, 2 * Math.PI);
+        ctx.fillStyle = '#0f172a'; ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#a855f7'; ctx.font = '10px sans-serif';
+        ctx.fillText('Qsh', midX - 10, y + 48);
+        ctx.fillText(`${state.Qsh >= 0 ? '+' : ''}${state.Qsh.toFixed(2)} pu`, midX - 22, y + 70);
+      }
+
+      // Load Icon at Bus 2
+      ctx.strokeStyle = '#cbd5e1'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(bus2X, y); ctx.lineTo(bus2X + 30, y); ctx.lineTo(bus2X + 30, y + 25); ctx.stroke();
+      // Load Arrow
+      ctx.beginPath();
+      ctx.moveTo(bus2X + 25, y + 25); ctx.lineTo(bus2X + 35, y + 25); ctx.lineTo(bus2X + 30, y + 35);
+      ctx.closePath(); ctx.fillStyle = '#cbd5e1'; ctx.fill();
+      ctx.font = '11px sans-serif';
+      ctx.fillText(`PL: ${state.PL.toFixed(2)}`, bus2X + 5, y + 48);
+      ctx.fillText(`QL: ${state.QL.toFixed(2)}`, bus2X + 5, y + 62);
+    }
+
+    // Draw P-Delta Curve
+    function renderPDeltaChart() {
+      const { ctx, width, height } = setupCanvas(cvsPDelta);
+      ctx.clearRect(0, 0, width, height);
+
+      const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+      const w = width - margin.left - margin.right;
+      const h = height - margin.top - margin.bottom;
+
+      // Axes
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, height - margin.bottom);
+      ctx.lineTo(width - margin.right, height - margin.bottom);
+      ctx.stroke();
+
+      // Axis Labels
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+      ctx.fillText('0°', margin.left - 5, height - margin.bottom + 15);
+      ctx.fillText('90°', margin.left + w / 2 - 8, height - margin.bottom + 15);
+      ctx.fillText('180°', margin.left + w - 15, height - margin.bottom + 15);
+      ctx.fillText('P (pu)', margin.left - 35, margin.top + 10);
+
+      const maxPScale = 3.5;
+
+      // Draw Uncompensated Curve (Reference - dotted)
+      ctx.strokeStyle = '#475569'; ctx.setLineDash([4, 4]); ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      const Pmax_ref = (state.Vs * 1.0) / state.XL;
+      for (let deg = 0; deg <= 180; deg += 2) {
+        const rad = deg * Math.PI / 180;
+        const p = Pmax_ref * Math.sin(rad);
+        const x = margin.left + (deg / 180) * w;
+        const y = height - margin.bottom - (p / maxPScale) * h;
+        if (deg === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw Current Mode Curve
+      ctx.strokeStyle = mode === 'series' ? '#f43f5e' : (mode === 'shunt' ? '#10b981' : (mode === 'combo' ? '#a855f7' : '#38bdf8'));
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      for (let deg = 0; deg <= 180; deg += 2) {
+        const rad = deg * Math.PI / 180;
+        const p = state.Pmax * Math.sin(rad);
+        const x = margin.left + (deg / 180) * w;
+        const y = height - margin.bottom - Math.max(0, (p / maxPScale) * h);
+        if (deg === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+
+      // Operating Point Marker
+      if (!state.collapsed && state.delta >= 0 && state.delta <= 180) {
+        const opX = margin.left + (state.delta / 180) * w;
+        const opY = height - margin.bottom - (state.PL / maxPScale) * h;
+
+        ctx.fillStyle = '#f59e0b';
+        ctx.beginPath(); ctx.arc(opX, opY, 6, 0, 2 * Math.PI); ctx.fill();
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = 1.5; ctx.stroke();
+
+        ctx.fillStyle = '#f59e0b'; ctx.font = '10px sans-serif';
+        ctx.fillText(`(${state.delta.toFixed(1)}°, ${state.PL.toFixed(2)})`, opX + 8, opY - 5);
+      }
+    }
+
+    // Draw Voltage Profile Along Line
+    function renderVProfileChart() {
+      const { ctx, width, height } = setupCanvas(cvsVProfile);
+      ctx.clearRect(0, 0, width, height);
+
+      const margin = { top: 20, right: 20, bottom: 30, left: 40 };
+      const w = width - margin.left - margin.right;
+      const h = height - margin.top - margin.bottom;
+
+      // Axes
+      ctx.strokeStyle = '#334155'; ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(margin.left, margin.top); ctx.lineTo(margin.left, height - margin.bottom);
+      ctx.lineTo(width - margin.right, height - margin.bottom);
+      ctx.stroke();
+
+      // Nominal 1.0 pu reference line
+      const y1pu = height - margin.bottom - (1.0 / 1.5) * h;
+      ctx.strokeStyle = '#334155'; ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(margin.left, y1pu); ctx.lineTo(width - margin.right, y1pu); ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = '#94a3b8'; ctx.font = '10px sans-serif';
+      ctx.fillText('Sending', margin.left, height - margin.bottom + 15);
+      ctx.fillText('Midpoint', margin.left + w / 2 - 15, height - margin.bottom + 15);
+      ctx.fillText('Receiving', margin.left + w - 35, height - margin.bottom + 15);
+      ctx.fillText('1.0 pu', margin.left - 32, y1pu + 3);
+
+      if (state.collapsed) return;
+
+      // Estimate Midpoint Voltage
+      let Vmid = (state.Vs + state.Vr) / 2;
+      if (mode === 'shunt' || mode === 'combo') {
+        Vmid += state.Qsh * 0.15; // Shunt boosts midpoint voltage
+      }
+
+      const points = [
+        { x: margin.left, v: state.Vs },
+        { x: margin.left + w / 2, v: Vmid },
+        { x: margin.left + w, v: state.Vr }
+      ];
+
+      ctx.strokeStyle = '#38bdf8'; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      points.forEach((pt, idx) => {
+        const py = height - margin.bottom - (pt.v / 1.5) * h;
+        if (idx === 0) ctx.moveTo(pt.x, py); else ctx.lineTo(pt.x, py);
+      });
+      ctx.stroke();
+
+      // Points
+      points.forEach(pt => {
+        const py = height - margin.bottom - (pt.v / 1.5) * h;
+        ctx.fillStyle = '#38bdf8';
+        ctx.beginPath(); ctx.arc(pt.x, py, 4, 0, 2 * Math.PI); ctx.fill();
+      });
+    }
+
+    // Initial Execution
+    updateUIControls();
+    readInputs();
+    calculateSystem();
+
+    // Responsive Canvas Resizing
+    window.addEventListener('resize', () => {
+      calculateSystem();
+    });
+  </script>
+</body>
+<footer style="text-align: center;">
+    <p>© Rushabh D. Vanara | Department of Electrical Engineering, Government Polytechnic, Junagadh</p>
+</footer>
+</html>
